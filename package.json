@@ -6,15 +6,18 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "pnpm run build && wrangler dev",
+    "deploy": "pnpm run build && wrangler deploy"
   },
   "dependencies": {
     "vue": "^3.5.32",
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.31.0",
     "@vitejs/plugin-vue": "^6.0.5",
-    "vite": "^8.0.3"
+    "vite": "^8.0.3",
+    "wrangler": "^4.80.0"
   },
   "keywords": [
     "quiz",
