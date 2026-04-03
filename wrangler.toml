@@ -1,0 +1,25 @@
+# Cloudflare Workers & Pages 配置
+# 用于部署到 Cloudflare Pages（配合 Functions）
+
+name = "quiz-pages"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# KV 命名空间绑定（部署时创建）
+# [[kv_namespaces]]
+# binding = "AI_CONFIG"
+# id = "your-kv-namespace-id"
+
+# D1 数据库绑定（用于存储用户进度）
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "quiz-db"
+# database_id = "your-d1-database-id"
+
+# 构建配置
+[build]
+command = "npm run build"
+
+# 静态资源（Pages 自动处理）
+[site]
+bucket = "./dist"

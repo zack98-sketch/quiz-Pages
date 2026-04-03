@@ -1,151 +1,125 @@
-// AI服务模块
+/**
+ * AI 服务适配器
+ * 支持两种模式：
+ * 1. 客户端模式（原有 localStorage 存储，用于本地开发）
+ * 2. Cloudflare Worker 模式（生产环境，通过 Worker 代理 AI 请求，Key 存储于 KV）
+ */
 
-const defaultConfig = {
-  provider: 'qwen',
-  models: {
-    qwen: {
-      name: '通义千问',
-      apiKey: '',
-      baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-      model: 'qwen-plus'
-    },
-    openai: {
-      name: 'OpenAI',
-      apiKey: '',
-      baseUrl: 'https://api.openai.com/v1',
-      model: 'gpt-4o-mini'
-    },
-    deepseek: {
-      name: 'DeepSeek',
-      apiKey: '',
-      baseUrl: 'https://api.deepseek.com/v1',
-      model: 'deepseek-chat'
+const isCloudflare = typeof window !== 'undefined' && window.__CF_PAGES__ !== undefined
+
+// Cloudflare Worker 端点（生产环境）
+const WORKER_URL = isCloudflare ? '/api' : 'http://localhost:8787'
+
+/**
+ * 获取 AI 配置（客户端仅获取非敏感信息）
+ */
+export async function getAIConfig() {
+  if (isCloudflare) {
+    const res = await fetch(`${WORKER_URL}/api/config`)
+    const data = await res.json()
+    return {
+      provider: data.provider || 'qwen',
+      models: {
+        qwen: {
+          name: '通义千问',
+          baseUrl: data.baseUrl || 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+          model: data.model || 'qwen-plus',
+          apiKey: '' // 绝不返回 Key
+        },
+        openai: {
+          name: 'OpenAI',
+          baseUrl: 'https://api.openai.com/v1',
+          model: 'gpt-4o-mini',
+          apiKey: ''
+        },
+        deepseek: {
+          name: 'DeepSeek',
+          baseUrl: 'https://api.deepseek.com/v1',
+          model: 'deepseek-chat',
+          apiKey: ''
+        }
+      }
+    }
+  } else {
+    // 开发模式：从 localStorage 读取
+    const saved = localStorage.getItem('aiConfig')
+    if (saved) {
+      return JSON.parse(saved)
+    }
+  }
+
+  return {
+    provider: 'qwen',
+    models: {
+      qwen: { name: '通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus', apiKey: '' },
+      openai: { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: '' },
+      deepseek: { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', apiKey: '' }
     }
   }
 }
 
-// 获取配置
-export function getAIConfig() {
-  const saved = localStorage.getItem('aiConfig')
-  if (saved) {
-    return JSON.parse(saved)
-  }
-  return defaultConfig
-}
-
-// 保存配置
-export function saveAIConfig(config) {
-  localStorage.setItem('aiConfig', JSON.stringify(config))
-}
-
-// 获取当前激活的模型配置
-export function getActiveModelConfig() {
-  const config = getAIConfig()
-  const provider = config.provider
-  return {
-    provider,
-    ...config.models[provider]
+/**
+ * 保存 AI 配置（生产环境写入 KV，开发环境写入 localStorage）
+ */
+export async function saveAIConfig(config) {
+  if (isCloudflare) {
+    // 生产环境：调用 Worker API 保存到 KV
+    const res = await fetch(`${WORKER_URL}/api/save-config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    })
+    if (!res.ok) throw new Error('保存失败')
+  } else {
+    localStorage.setItem('aiConfig', JSON.stringify(config))
   }
 }
 
-// 构建简洁的解析提示词
-function buildAnalysisPrompt(question, options, userAnswer, correctAnswer, analysis) {
+/**
+ * 测试 AI 连接
+ */
+export async function testConnection(provider, apiKey, baseUrl, model) {
+  try {
+    const res = await fetch(`${WORKER_URL}/api/test-connection`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, apiKey, baseUrl, model })
+    })
+    const data = await res.json()
+    return data
+  } catch (err) {
+    return { success: false, message: '网络请求失败' }
+  }
+}
+
+/**
+ * AI 解析题目（通过 Worker 代理）
+ */
+export async function analyzeQuestion(question, options, userAnswer, correctAnswer, analysis) {
   const optionsText = options.map((opt, idx) => 
     `${String.fromCharCode(65 + idx)}. ${opt}`
   ).join('\n')
 
-  return `题目：${question}
+  const prompt = `题目：${question}\n\n选项：\n${optionsText}\n\n用户答案：${userAnswer || '未作答'}\n正确答案：${correctAnswer}\n\n用简洁语言回答（不超过200字）：\n1. 考查知识点\n2. 解题关键\n3. 易错点提示\n\n直接回答，不要加序号和标题。`
 
-选项：
-${optionsText}
-
-用户答案：${userAnswer || '未作答'}
-正确答案：${correctAnswer}
-
-请用简洁的语言回答（不超过200字）：
-1. 考查知识点（一句话）
-2. 解题关键（为什么选这个答案）
-3. 易错点提示
-
-直接回答，不要加序号和标题。`
-}
-
-// AI解析
-export async function analyzeQuestion(question, options, userAnswer, correctAnswer, analysis) {
-  const modelConfig = getActiveModelConfig()
-  
-  if (!modelConfig.apiKey) {
-    throw new Error('请先在AI设置中配置API Key')
-  }
-
-  const prompt = buildAnalysisPrompt(question, options, userAnswer, correctAnswer, analysis)
-
-  const response = await fetch(`${modelConfig.baseUrl}/chat/completions`, {
+  const res = await fetch(`${WORKER_URL}/api/analyze`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${modelConfig.apiKey}`
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: modelConfig.model,
-      messages: [
-        {
-          role: 'system',
-          content: '你是考试辅导专家，请用简洁清晰的语言解析题目，回答控制在200字以内。'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: 0.5,
-      max_tokens: 500
+      question,
+      options,
+      userAnswer,
+      correctAnswer,
+      analysis,
+      prompt
     })
   })
 
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error?.message || '请求失败')
+  if (!res.ok) {
+    const error = await res.json()
+    throw new Error(error.error || '请求失败')
   }
 
-  const data = await response.json()
-  return data.choices[0].message.content
-}
-
-// 测试连接
-export async function testConnection(provider, apiKey, baseUrl, model) {
-  try {
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [
-          { role: 'user', content: '回复OK' }
-        ],
-        max_tokens: 10
-      })
-    })
-
-    if (response.ok) {
-      return {
-        success: true,
-        message: '连接成功'
-      }
-    } else {
-      const error = await response.json()
-      return {
-        success: false,
-        message: error.error?.message || '连接失败'
-      }
-    }
-  } catch (err) {
-    return {
-      success: false,
-      message: '网络请求失败'
-    }
-  }
+  const data = await res.json()
+  return data.result
 }

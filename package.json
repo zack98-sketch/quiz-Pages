@@ -1,18 +1,22 @@
 {
   "name": "quiz-pages",
   "version": "1.0.0",
-  "description": "密评题库练习系统 - 支持部署到 Cloudflare Pages、Vercel、Netlify",
+  "description": "密评题库练习系统 - 支持部署到 Cloudflare Pages、Vercel、Netlify（安全增强版）",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy": "npm run build && wrangler pages deploy dist",
+    "lint": "eslint src --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx --fix",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "vue": "^3.5.32",
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241022.0",
     "@vitejs/plugin-vue": "^6.0.5",
     "vite": "^8.0.3"
   },
@@ -22,7 +26,8 @@
     "密评",
     "vue3",
     "vite",
-    "cloudflare-pages"
+    "cloudflare-pages",
+    "security"
   ],
   "author": "",
   "license": "MIT"
